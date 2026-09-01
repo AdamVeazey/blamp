@@ -1,0 +1,11 @@
+manifest:
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: v3.7.0 # Lock down your target Zephyr RTOS release version
+      import: true
+  self:
+    path: blamp

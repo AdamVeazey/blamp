@@ -1,0 +1,23 @@
+# Zephyr build output
+build/
+
+# West workspace state (if initialized inside your app dir)
+.west/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# VS Code local caches (keeps shared settings/tasks)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.vscode/ipch/
+
+# OS/Editor generated files
+.DS_Store
+*.swp
+
