@@ -1,0 +1,68 @@
+/* app/boards/nucleo_f446re.overlay */
+
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+    chosen {
+        zephyr,display = &ssd1309_spi;
+    };
+
+    buttons {
+        compatible = "gpio-keys";
+        encoder_btn: encoder_btn {
+            gpios = <&gpioa 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            zephyr,code = <INPUT_KEY_SPACE>;
+        };
+    };
+
+    longpress {
+        compatible = "zephyr,input-longpress";
+        input-codes = <INPUT_KEY_SPACE>;            /* Listen to this raw code */
+        short-codes = <INPUT_KEY_ENTER>;            /* Send this if tapped quickly */
+        long-codes  = <INPUT_KEY_MENU>;             /* Send this if held down! */
+        long-delay-ms = <800>;                      /* Held threshold (800ms) */
+    };
+};
+
+&spi1 {
+    status = "okay";
+    /* Matches your working pins: PB3 (CLK) and PA7 (MOSI) */
+    pinctrl-0 = <&spi1_sck_pb3 &spi1_miso_pa6 &spi1_mosi_pa7>;
+    pinctrl-names = "default";
+    cs-gpios = <&gpiob 6 GPIO_ACTIVE_LOW>;
+
+    ssd1309_spi: ssd1309@0 {
+        compatible = "solomon,ssd1306fb";
+        reg = <0>;
+        spi-max-frequency = <1000000>; /* Keep it at a safe 1 MHz */
+        width = <128>;
+        height = <64>;
+        ready-time-ms = <50>;
+        segment-offset = <0>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <63>;
+        segment-remap;
+        com-invdir;
+        prechargep = <0x22>;
+
+        /* Working Data/Command and Reset pins */
+        data_cmd-gpios = <&gpioc 7 GPIO_ACTIVE_HIGH>;
+        reset-gpios = <&gpioa 9 GPIO_ACTIVE_LOW>;
+    };
+};
+
+&timers2 {
+    status = "okay";
+    qdec: qdec {
+        status = "okay";
+        pinctrl-0 = <&tim2_ch1_pa0 &tim2_ch2_pa1>;
+        pinctrl-names = "default";
+        st,input-filter-level = <5>;
+        st,counts-per-revolution = <96>; /* 24 detents * 4 = 96 counts */
+    };
+};
+
+&flash0 {
+    /delete-node/ partitions;
+};
