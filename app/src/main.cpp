@@ -8,6 +8,7 @@
 
 #include "Blamp.hpp"
 #include "QuadratureEncoder.hpp"
+#include "FSC_BT1026.hpp"
 
 LOG_MODULE_REGISTER(main_cpp, LOG_LEVEL_INF);
 
@@ -65,6 +66,30 @@ INPUT_CALLBACK_DEFINE( nullptr, input_cb );
 int main(void) {
     Blamp::init();
     qdec_init();
+    FSC_BT1026 bt( DEVICE_DT_GET(DT_ALIAS(modem)) );
+    bt.init();
+
+    LOG_INF("S/PDIF: %i", bt.getSPDIFCFG().value_or(0));
+    bt.setSPDIFCFG( false );
+    LOG_INF("S/PDIF: %i", bt.getSPDIFCFG().value_or(0));
+    bt.setSPDIFCFG( true );
+    LOG_INF("S/PDIF: %i", bt.getSPDIFCFG().value_or(0));
+    auto r = bt.getI2SCFG().value();
+    LOG_INF("I2S Config: %s, %s, %skHz, %s justified, %s bit delay, bitdepth: %u",
+        r.enabled ? "Enabled" : "Disabled",
+        r.slave ? "Slave" : "Master",
+        r.fs44100 ? "44.1" : "48",
+        r.right ? "Right" : "Left",
+        r.noDelay ? "0" : "1",
+        r.bitDepth
+    );
+    auto p = bt.getProfile().value();
+    LOG_INF("Profile: %u", p);
+
+
+    auto v = bt.getVersion().value();
+    LOG_INF("Version - Module: %s, Version: %s, Date: %s", v.module, v.version, v.date);
+
 
     while (1) {
         // 1. Ask LVGL how long until its next task (e.g., inactivity timer, animation)

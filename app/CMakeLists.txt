@@ -13,5 +13,6 @@ target_sources(app PRIVATE
     src/Blamp.cpp
     src/CLI_blampknob.cpp
     src/DisplayUI.cpp
+    src/FSC_BT1026.cpp
     src/main.cpp
 )

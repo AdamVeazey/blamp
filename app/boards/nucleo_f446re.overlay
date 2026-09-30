@@ -22,6 +22,10 @@
         long-codes  = <INPUT_KEY_MENU>;             /* Send this if held down! */
         long-delay-ms = <800>;                      /* Held threshold (800ms) */
     };
+
+    aliases {
+		modem = &usart1;
+	};
 };
 
 &spi1 {
@@ -48,7 +52,7 @@
 
         /* Working Data/Command and Reset pins */
         data_cmd-gpios = <&gpioc 7 GPIO_ACTIVE_HIGH>;
-        reset-gpios = <&gpioa 9 GPIO_ACTIVE_LOW>;
+        reset-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
     };
 };
 
@@ -61,6 +65,13 @@
         st,input-filter-level = <5>;
         st,counts-per-revolution = <96>; /* 24 detents * 4 = 96 counts */
     };
+};
+
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pb7>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
 };
 
 &flash0 {
