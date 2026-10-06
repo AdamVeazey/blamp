@@ -66,30 +66,95 @@ INPUT_CALLBACK_DEFINE( nullptr, input_cb );
 int main(void) {
     Blamp::init();
     qdec_init();
-    FSC_BT1026 bt( DEVICE_DT_GET(DT_ALIAS(modem)) );
+    FSC::BT1026 bt( DEVICE_DT_GET(DT_ALIAS(modem)) );
     bt.init();
-
-    LOG_INF("S/PDIF: %i", bt.getSPDIFCFG().value_or(0));
-    bt.setSPDIFCFG( false );
-    LOG_INF("S/PDIF: %i", bt.getSPDIFCFG().value_or(0));
+    // bt.reboot();
+    if( !bt.getName().value().equals("Blamp") ) {
+        bt.setName("Blamp", false);
+        LOG_WRN("Set name!");
+    }
     bt.setSPDIFCFG( true );
     LOG_INF("S/PDIF: %i", bt.getSPDIFCFG().value_or(0));
     auto r = bt.getI2SCFG().value();
-    LOG_INF("I2S Config: %s, %s, %skHz, %s justified, %s bit delay, bitdepth: %u",
-        r.enabled ? "Enabled" : "Disabled",
-        r.slave ? "Slave" : "Master",
-        r.fs44100 ? "44.1" : "48",
-        r.right ? "Right" : "Left",
-        r.noDelay ? "0" : "1",
-        r.bitDepth
+    LOG_INF("I2S Config: %s, %s, %skHz, %s justified, %s bit delay, bitdepth: %s",
+        r.getEnabled() ? "Enabled" : "Disabled",
+        r.getSlave() ? "Slave" : "Master",
+        r.getFrequency() == FSC::I2SCFG::Frequency::FS44100 ? "44.1" : "48",
+        r.getRight() ? "Right" : "Left",
+        r.getNoDelay() ? "0" : "1",
+        r.getBitDepth() == FSC::I2SCFG::BitDepth::B16 ? "16" :
+            r.getBitDepth() == FSC::I2SCFG::BitDepth::B24 ? "24" : "32"
     );
-    auto p = bt.getProfile().value();
-    LOG_INF("Profile: %u", p);
-
+    auto desiredProfile = FSC::Profile()
+        .setSPP(true) // Serial Port Profile
+        .setA2DPSink(true) // actual BT audio playback profile
+        .setAVRCPController(true); // needed for media controls
+    auto profile = bt.getProfile().value();
+    if( profile != desiredProfile ) {
+        bt.setProfile(desiredProfile);
+        LOG_WRN("Set profile!");
+    }
+    LOG_INF("Profile.SPP: %u", profile.getSPP());
+    LOG_INF("Profile.GATTServer: %u", profile.getGATTServer());
+    LOG_INF("Profile.GATTClient: %u", profile.getGATTClient());
+    LOG_INF("Profile.HFP_HF: %u", profile.getHFP_HF());
+    LOG_INF("Profile.HFP_AG: %u", profile.getHFP_AG());
+    LOG_INF("Profile.A2DPSink: %u", profile.getA2DPSink());
+    LOG_INF("Profile.A2DPSource: %u", profile.getA2DPSource());
+    LOG_INF("Profile.AVRCPController: %u", profile.getAVRCPController());
+    LOG_INF("Profile.AVRCPTarget: %u", profile.getAVRCPTarget());
+    LOG_INF("Profile.HIDKeyboard: %u", profile.getHIDKeyboard());
+    LOG_INF("Profile.PBAPServer: %u", profile.getPBAPServer());
 
     auto v = bt.getVersion().value();
-    LOG_INF("Version - Module: %s, Version: %s, Date: %s", v.module, v.version, v.date);
+    LOG_INF("Version - Module: %s, Version: %s, Date: %s", v.module.asCString(), v.version.asCString(), v.date.asCString());
+    LOG_INF("COD: %s", bt.getCOD().value().asCString());
+    LOG_INF("Auto connection max attempts: %u", bt.getAutoConn().value());
+    LOG_INF("MAC: %s", bt.getAddress().value().asCString());
+    LOG_INF("Pin: %s", bt.getPin().value().asCString());
+    switch(bt.getInputCFG().value()) {
+    case FSC::InputCFG::BT:     LOG_INF("InputCFG: BT");        break;
+    case FSC::InputCFG::LineIn: LOG_INF("InputCFG: LineIn");    break;
+    case FSC::InputCFG::SPDIF:  LOG_INF("InputCFG: SPDIF");     break;
+    case FSC::InputCFG::I2S:    LOG_INF("InputCFG: I2S");       break;
+    }
 
+    LOG_INF("MutePin: %u", bt.getMutePIO().value());
+    auto a2dpCFG = bt.getA2DPCFG().value();
+    LOG_INF("A2DP CFG.AAC: %u", a2dpCFG.getAAC());
+    LOG_INF("A2DP CFG.APTX: %u", a2dpCFG.getAPTX());
+    LOG_INF("A2DP CFG.APTX-LL: %u", a2dpCFG.getAPTX_LL());
+    LOG_INF("A2DP CFG.APTX-HD: %u", a2dpCFG.getAPTX_HD());
+    LOG_INF("A2DP CFG.APTX-AD: %u", a2dpCFG.getAPTX_AD());
+    LOG_INF("A2DP CFG.LDAC: %u", a2dpCFG.getLDAC());
+    auto a2dpDecoder = bt.getA2DPDecoder();
+    if( a2dpDecoder.has_value() ) {
+        switch(a2dpDecoder.value()) {
+        case FSC::A2DPDecoder::SBC:     LOG_INF("A2DP Decoder: SBC");       break;
+        case FSC::A2DPDecoder::AAC:     LOG_INF("A2DP Decoder: AAC");       break;
+        case FSC::A2DPDecoder::APTX:    LOG_INF("A2DP Decoder: APTX");      break;
+        case FSC::A2DPDecoder::APTX_LL: LOG_INF("A2DP Decoder: APTX-LL");   break;
+        case FSC::A2DPDecoder::APTX_HD: LOG_INF("A2DP Decoder: APTX-HD");   break;
+        case FSC::A2DPDecoder::APTX_AD: LOG_INF("A2DP Decoder: APTX-AD");   break;
+        case FSC::A2DPDecoder::LDAC:    LOG_INF("A2DP Decoder: LDAC");      break;
+        }
+    }
+    auto a2dpEncoder = bt.getA2DPEncoder();
+    if( a2dpEncoder.has_value() ) {
+        switch(a2dpEncoder.value()) {
+        case FSC::A2DPEncoder::SBC:     LOG_INF("A2DP Encoder: SBC");       break;
+        case FSC::A2DPEncoder::AAC:     LOG_INF("A2DP Encoder: AAC");       break;
+        case FSC::A2DPEncoder::APTX:    LOG_INF("A2DP Encoder: APTX");      break;
+        case FSC::A2DPEncoder::APTX_LL: LOG_INF("A2DP Encoder: APTX-LL");   break;
+        case FSC::A2DPEncoder::APTX_HD: LOG_INF("A2DP Encoder: APTX-HD");   break;
+        case FSC::A2DPEncoder::APTX_AD: LOG_INF("A2DP Encoder: APTX-AD");   break;
+        case FSC::A2DPEncoder::LDAC:    LOG_INF("A2DP Encoder: LDAC");      break;
+        }
+    }
+    bt.setAVRCPCFG(FSC::AVRCPCFG().setTrackInfoOnChange(true).setPlayProgress(1));
+    auto avrcpCFG = bt.getAVRCPCFG().value();
+    LOG_INF("AVRCP CFG.trackInfoOnChange: %u", avrcpCFG.getTrackInfoOnChange());
+    LOG_INF("AVRCP CFG.playProgressInterval: %u", avrcpCFG.getPlayProgress());
 
     while (1) {
         // 1. Ask LVGL how long until its next task (e.g., inactivity timer, animation)
