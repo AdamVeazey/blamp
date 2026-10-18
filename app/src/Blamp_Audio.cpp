@@ -2,6 +2,7 @@
 
 #include <zephyr/logging/log.h>
 #include "DisplayUI.hpp"
+#include "BTQ.hpp"
 
 LOG_MODULE_REGISTER(blamp_audio, LOG_LEVEL_INF);
 
@@ -46,8 +47,7 @@ handleAudio_Playback( const MainSysQ_Audio_Playback& action ) {
         break;
     case InputSource::BLUETOOTH:
         if( connections.bluetoothConnected ) {
-            // send AT command to module to play/pause
-            // bt.mediaControl( a );
+            BTQ_SetPlayback( a == A::Play ).send();
             success = true;
         }
         break;
@@ -117,6 +117,7 @@ handleAudio_Volume( const MainSysQ_Audio_Volume& volume ) {
     if( state == DisplayUI::MenuState::Home ) {
         display.updateHomeVolume( audio.volume );
     }
+    BTQ_SetVolume( volume.getVolumePercent() ).send();
 }
 
 void Blamp::

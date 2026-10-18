@@ -26,6 +26,9 @@ private:
     static void handleAudio_Volume( const MainSysQ_Audio_Volume& volume );
     static void handleAudio_TAS3251Err( const MainSysQ_Audio_TAS3251Err& err );
     static void handleAudio_PCM9211Err( const MainSysQ_Audio_PCM9211Err& err );
+
+    static void handleBT_IsPlaying( const MainSysQ_BT_IsPlaying& bt );
+    static void handleBT_Connected( const MainSysQ_BT_Connected& bt );
 public:
     static void init();
     static void processEvents( const MainSysQ& message );

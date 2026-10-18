@@ -22,11 +22,13 @@ target_include_directories(app PRIVATE inc)
 target_sources(app PRIVATE
     src/Blamp_Audio.cpp
     src/Blamp_Blampknob.cpp
+    src/Blamp_BT.cpp
     src/Blamp.cpp
     src/CLI_blampknob.cpp
     src/DisplayUI.cpp
     src/FSC_BT1026.cpp
     src/main.cpp
+    src/ThreadBT.cpp
 )
 
 target_link_libraries(app PRIVATE EDF)

@@ -21,6 +21,8 @@ processEvents( const MainSysQ& message ) {
     case E::Audio_Volume:       handleAudio_Volume( (const MainSysQ_Audio_Volume&)message );                break;
     case E::Audio_TAS3251Err:   handleAudio_TAS3251Err( (const MainSysQ_Audio_TAS3251Err&)message );        break;
     case E::Audio_PCM9211Err:   handleAudio_PCM9211Err( (const MainSysQ_Audio_PCM9211Err&)message );        break;
-    default:                                                                                                break;
+
+    case E::BT_IsPlaying:       handleBT_IsPlaying( (const MainSysQ_BT_IsPlaying&)message );                break;
+    case E::BT_Connected:       handleBT_Connected( (const MainSysQ_BT_Connected&)message );                break;
     }
 }

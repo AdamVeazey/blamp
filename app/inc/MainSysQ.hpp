@@ -12,6 +12,9 @@ enum class MainSysQEnum {
     Audio_Volume,       // uint8_t volume_percent; (0-100)
     Audio_TAS3251Err,   // enum Source : uint8_t { nFAULT, nCLIP_OTW }
     Audio_PCM9211Err,   // enum Source : uint8_t { INT0, INT1 }
+
+    BT_IsPlaying,        // bool isPlaying
+    BT_Connected,        // bool connected
 };
 
 using MainSysQ = MessageQueue<MainSysQEnum, 16, 200>;
@@ -119,4 +122,32 @@ public:
         source(source)
     { verifyMessageSize<MainSysQ_Audio_PCM9211Err>(); }
     Source getSource() const { return source; }
+};
+
+// ----------------------------------------------------------------------------
+//                 Bluetooth messages to Main System Thread
+// ----------------------------------------------------------------------------
+
+// from kworker event thread
+class MainSysQ_BT_IsPlaying : public MainSysQ {
+private:
+    bool playing;
+public:
+    MainSysQ_BT_IsPlaying( bool playing ) :
+        MainSysQ( Enum::BT_IsPlaying ),
+        playing(playing)
+    { verifyMessageSize<MainSysQ_BT_IsPlaying>(); }
+    bool isPlaying() const { return playing; }
+};
+
+// from kworker event thread
+class MainSysQ_BT_Connected : public MainSysQ {
+private:
+    bool connected;
+public:
+    MainSysQ_BT_Connected( bool connected ) :
+        MainSysQ( Enum::BT_Connected ),
+        connected(connected)
+    { verifyMessageSize<MainSysQ_BT_Connected>(); }
+    bool isConnected() const { return connected; }
 };

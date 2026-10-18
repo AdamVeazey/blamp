@@ -2,7 +2,7 @@
 
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(fsc_bt1026, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(fsc_bt1026, LOG_LEVEL_DBG);
 
 namespace FSC {
 
@@ -88,6 +88,7 @@ callbackMatchUnsolicited( modem_chat* chat, char** argv, uint16_t argc ) {
         line += argv[k];
     }
     LOG_INF("%s", line.asCString());
+    asyncResponse(argv, argc);
 }
 
 // Put VER in the unsolicited matches list
@@ -96,7 +97,8 @@ MODEM_CHAT_MATCHES_DEFINE(matchesAbort, matchERROR);
 
 bool BT1026::
 runSingleCommand( const char* cmd, const char* expected ) {
-    uint32_t timeout_ms = 3000;
+    uint32_t timeout_ms = 5000;
+    LOG_INF("runSingleCommand() >%s<", cmd);
     if (k_mutex_lock(&lock, K_MSEC(timeout_ms + 500)) != 0) {
         LOG_ERR("Failed to get BT lock");
         return false;
@@ -147,19 +149,117 @@ runSingleCommand( const char* cmd, const char* expected ) {
     }
 
     k_mutex_unlock( &lock );
+    if( lastResult != MODEM_CHAT_SCRIPT_RESULT_SUCCESS ) {
+        LOG_WRN("runSingleCommand() lastResult: %s",
+            lastResult == MODEM_CHAT_SCRIPT_RESULT_TIMEOUT ? "Timeout" : "Abort"
+        );
+    }
 
     return lastResult == MODEM_CHAT_SCRIPT_RESULT_SUCCESS;
 }
 
+void BT1026::
+asyncResponse( char** argv, uint16_t argc ) {
+    // argv[0] = "+"
+    // argv[1] = "<cmd>"
+    // argv[2] = "<value>"
+    // argv[n] = "[comma seperated values...]"
+    if( argc < 2 ) return;
+    EDF::String<32> cmd(argv[1]);
+    if( cmd.equals("SCAN") ) {
+        if( (argc == 3) && (argv[2][0] == 'E')) {
+            if( events.onScanResult ) {
+                events.onScanResult( -1, 0, "", 0, 0, nullptr );
+            }
+            LOG_DBG("End of scan list");
+            return;
+        }
+        else if( argc < 7 || !events.onScanResult ) return;
+        uint8_t dataLen = EDF::String<32>(argv[6]).toUint8_t();
+        events.onScanResult(
+            EDF::String<32>(argv[2]).toInt16_t(),
+            EDF::String<32>(argv[3]).toUint8_t(),
+            argv[4],
+            EDF::String<32>(argv[5]).toInt8_t(),
+            dataLen,
+            (argc >= 8 && dataLen > 0) ? reinterpret_cast<const uint8_t*>(argv[7]) : nullptr
+        );
+    }
+    else if( cmd.equals("PAIRED") ) {
+        if( argc < 3 || !events.onPaired ) return;
+        events.onPaired( argv[2] );
+    }
+    else if( cmd.equals("DEVSTAT") ) {
+        if( argc < 3 || !events.onStateDevice ) return;
+        events.onStateDevice( EDF::String<32>(argv[2]).toUint8_t() );
+    }
+    else if( cmd.equals("A2DPSTAT") ) {
+        if( argc < 3 || !events.onStateA2DP ) return;
+        events.onStateA2DP(
+            static_cast<A2DPSTATE>(EDF::String<32>(argv[2]).toUint8_t())
+        );
+    }
+    else if( cmd.equals("A2DPDEV") ) {
+        if( argc < 3 || !events.onDeviceA2DPConnected ) return;
+        if( argc < 4 ) {
+            events.onDeviceA2DPConnected( argv[2], nullptr );
+            return;
+        }
+        events.onDeviceA2DPConnected( argv[2], argv[3] );
+    }
+    else if( cmd.equals("AVRCPSTAT") ) {
+        if( argc < 3 || !events.onStateAVRCP ) return;
+        events.onStateAVRCP(
+            static_cast<AVRCPSTATE>(EDF::String<32>(argv[2]).toUint8_t())
+        );
+    }
+    else if( cmd.equals("PLAYSTAT") ) {
+        if( argc < 3 || !events.onStatePlay ) return;
+        events.onStatePlay(
+            static_cast<PlayState>(EDF::String<32>(argv[2]).toUint8_t())
+        );
+    }
+    else if( cmd.equals("TRACKSTAT") ) {
+        if( argc < 5 || !events.onStateTrack ) return;
+        events.onStateTrack(
+            TrackState{
+                .playState = static_cast<PlayState>(EDF::String<32>(argv[2]).toUint8_t()),
+                .elapsedTime_ms = EDF::String<33>(argv[3]).toUint32_t(),
+                .totalTime_ms = EDF::String<33>(argv[4]).toUint32_t()
+            }
+        );
+    }
+    else if( cmd.equals("TRACKINFO") ) {
+        static TrackInfo ti;
+        if( argc < 3 || !events.onTrackInfo ) return;
+        ti.title = argv[2];
+        if( argc < 4 ) {
+            ti.artist.clear();
+            ti.album.clear();
+            events.onTrackInfo( ti );
+            return;
+        }
+        ti.artist = argv[3];
+        if( argc < 5 ) {
+            ti.album.clear();
+            events.onTrackInfo( ti );
+            return;
+        }
+        ti.album = argv[4];
+        events.onTrackInfo( ti );
+    }
+}
+
 BT1026::
-BT1026( const device* const uart ) :
+BT1026( const device* const uart, const Events& events ) :
     uart(uart),
     backend{},
     chat{},
     uartRx{},
-    uartTx{},
     chatRx{},
-    chatArgv{}
+    uartTx{},
+    chatArgv{},
+    events{events}
 {
     k_mutex_init( &lock );
     k_sem_init( &syncSem, 0, 1 ); // Start empty, max count 1
@@ -167,26 +267,6 @@ BT1026( const device* const uart ) :
 
 int BT1026::
 init() {
-    /* Init script commands */
-    MODEM_CHAT_SCRIPT_CMDS_DEFINE(
-        initCmds,
-        MODEM_CHAT_SCRIPT_CMD_RESP("AT", matchOK),
-    );
-
-    /* Script configurations */
-    MODEM_CHAT_SCRIPT_DEFINE(
-        initScript,
-        initCmds,
-        matchesAbort,
-        []( modem_chat* chat, modem_chat_script_result result, void* self ) {
-            auto* instance = static_cast<BT1026*>(self);
-            instance->lastResult = result;
-            k_sem_give(&instance->syncSem); // WAKE UP INIT!
-        },
-        5 // Total script timeout in seconds
-    );
-    int err;
-
     if (!device_is_ready(uart)) {
         LOG_ERR("Modem UART not ready");
         return -ENODEV;
@@ -214,7 +294,8 @@ init() {
         .unsol_matches = matchesUnsol,
         .unsol_matches_size = ARRAY_SIZE(matchesUnsol),
     };
-    err = modem_chat_init(&chat, &chat_config);
+
+    int err = modem_chat_init(&chat, &chat_config);
     if (err < 0) return err;
 
     err = modem_chat_attach(&chat, &backend.pipe);
@@ -226,37 +307,8 @@ init() {
     // Give the hardware a tiny breathing window just in case
     k_msleep(200);
 
-    // Lock the driver so nothing else can talk to it during init
-    if (k_mutex_lock(&lock, K_MSEC(1000)) != 0) {
-        LOG_ERR("Failed to lock for init");
-        return -EBUSY;
-    }
-
-    // Reset and run the init script
-    k_sem_reset(&syncSem);
-    err = modem_chat_script_run(&chat, &initScript);
-    if (err < 0) {
-        LOG_ERR("Failed to start init script: %d", err);
-        k_mutex_unlock(&lock);
-        return err;
-    }
-
-    // BLOCK HERE until the init script completes (success or timeout)
-    if (k_sem_take(&syncSem, K_SECONDS(5)) != 0) {
-        LOG_ERR("BT Init Timeout!");
-        modem_chat_script_abort(&chat);
-        k_mutex_unlock(&lock);
-        return -ETIMEDOUT;
-    }
-
-    k_mutex_unlock(&lock);
-
-    if (lastResult != MODEM_CHAT_SCRIPT_RESULT_SUCCESS) {
-        LOG_ERR("BT Init Script failed with result: %d", lastResult);
-        return -EIO;
-    }
-
-    return 0;
+    bool ok = runSingleCommand("AT");
+    return !ok; // 0 == success
 }
 
 std::optional<Version> BT1026::
@@ -279,9 +331,9 @@ getBaudrate() {
     return EDF::String<33>(response.argv[2]).toUint32_t();
 }
 
-void BT1026::
+bool BT1026::
 setBaudrate( uint32_t baudrate ) {
-    runSingleCommand( (EDF::String<33>("AT+BAUD=") + baudrate).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+BAUD=") + baudrate).asCString() );
 }
 
 std::optional<I2SCFG> BT1026::
@@ -291,9 +343,9 @@ getI2SCFG() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setI2SCFG( I2SCFG cfg ) {
-    runSingleCommand( (EDF::String<33>("AT+I2SCFG=") + cfg).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+I2SCFG=") + cfg).asCString() );
 }
 
 std::optional<bool> BT1026::
@@ -303,9 +355,9 @@ getSPDIFCFG() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setSPDIFCFG( bool enable ) {
-    runSingleCommand( (EDF::String<33>("AT+SPDIFCFG=") + enable).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+SPDIFCFG=") + enable).asCString() );
 }
 
 std::optional<int32_t> BT1026::
@@ -315,9 +367,9 @@ getMicGain() {
     return EDF::String<33>(response.argv[2]).toInt32_t();
 }
 
-void BT1026::
+bool BT1026::
 setMicGain( int32_t gain ) {
-    runSingleCommand( (EDF::String<33>("AT+MICGAIN=") + gain).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+MICGAIN=") + gain).asCString() );
 }
 
 std::optional<int32_t> BT1026::
@@ -327,19 +379,19 @@ getSpkVol() {
     return EDF::String<33>(response.argv[2]).toInt32_t();
 }
 
-void BT1026::
+bool BT1026::
 setSpkVol( int32_t volume ) {
-    runSingleCommand( (EDF::String<33>("AT+SPKVOL=") + volume).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+SPKVOL=") + volume).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 reboot() {
-    runSingleCommand("AT+REBOOT");
+    return runSingleCommand ("AT+REBOOT");
 }
 
-void BT1026::
+bool BT1026::
 factoryReset() {
-    runSingleCommand("AT+RESTORE");
+    return runSingleCommand ("AT+RESTORE");
 }
 
 std::optional<bool> BT1026::
@@ -349,9 +401,9 @@ getBluetoothIsOn() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setBluetooth( bool on ) {
-    runSingleCommand( (EDF::String<33>("AT+BTEN=") + on).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+BTEN=") + on).asCString() );
 }
 
 std::optional<Profile> BT1026::
@@ -361,9 +413,9 @@ getProfile() {
     return EDF::String<33>(response.argv[2]).toUint16_t();
 }
 
-void BT1026::
+bool BT1026::
 setProfile( Profile p ) {
-    runSingleCommand( (EDF::String<33>("AT+PROFILE=") + p).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+PROFILE=") + p).asCString() );
 }
 
 std::optional<uint8_t> BT1026::
@@ -373,9 +425,9 @@ getAutoConn() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setAutoConn( uint8_t maxAttempts ) {
-    runSingleCommand( (EDF::String<33>("AT+AUTOCONN=") + maxAttempts).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+AUTOCONN=") + maxAttempts).asCString() );
 }
 
 std::optional<STATES> BT1026::
@@ -424,9 +476,9 @@ getName() {
     return response.argv[2];
 }
 
-void BT1026::
+bool BT1026::
 setName(const EDF::String<32>& name, bool enableMACSuffix) {
-    runSingleCommand((
+    return runSingleCommand ((
         EDF::String<40>("AT+NAME=") + name + ',' + enableMACSuffix
     ).asCString());
 }
@@ -438,9 +490,9 @@ getBLEName() {
     return response.argv[2];
 }
 
-void BT1026::
+bool BT1026::
 setBLEName(const EDF::String<32>& name, bool enableMACSuffix) {
-    runSingleCommand((
+    return runSingleCommand ((
         EDF::String<42>("AT+LENAME=") + name + ',' + enableMACSuffix
     ).asCString());
 }
@@ -452,9 +504,9 @@ getSPP() {
     return static_cast<SecureSimplePairing>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 setSPP(SecureSimplePairing m) {
-    runSingleCommand( (EDF::String<33>("AT+SPP=") + static_cast<uint8_t>(m)).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+SPP=") + static_cast<uint8_t>(m)).asCString() );
 }
 
 std::optional<EDF::String<16>> BT1026::
@@ -464,9 +516,9 @@ getPin() {
     return response.argv[2];
 }
 
-void BT1026::
+bool BT1026::
 setPin(const EDF::String<16>& pin) {
-    runSingleCommand( (EDF::String<33>("AT+PIN=") + pin).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+PIN=") + pin).asCString() );
 }
 
 std::optional<EDF::String<7>> BT1026::
@@ -476,9 +528,9 @@ getCOD() {
     return response.argv[2];
 }
 
-void BT1026::
+bool BT1026::
 setCOD(const EDF::String<7>& cod) {
-    runSingleCommand( (EDF::String<33>("AT+COD=") + cod).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+COD=") + cod).asCString() );
 }
 
 std::optional<bool> BT1026::
@@ -488,29 +540,29 @@ getAdvertising() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setAdvertising(bool start) {
-    runSingleCommand( (EDF::String<33>("AT+PAIR=") + start).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+PAIR=") + start).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 setScanning(bool start) {
-    runSingleCommand( (EDF::String<33>("AT+SCAN=") + start).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+SCAN=") + start).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 getPairedList() {
-    runSingleCommand( "AT+PLIST" );
+    return runSingleCommand ( "AT+PLIST" );
 }
 
-void BT1026::
+bool BT1026::
 delPaired(uint8_t index) {
-    runSingleCommand( (EDF::String<33>("AT+PLIST=") + index).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+PLIST=") + index).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 delAllConnections() {
-    runSingleCommand( "AT+DSCA" );
+    return runSingleCommand ( "AT+DSCA" );
 }
 
 std::optional<bool> BT1026::
@@ -520,9 +572,9 @@ getThroughputMode() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setThroughputMode(bool enable) {
-    runSingleCommand( (EDF::String<33>("AT+TPMODE=") + enable).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+TPMODE=") + enable).asCString() );
 }
 
 std::optional<InputCFG> BT1026::
@@ -532,9 +584,9 @@ getInputCFG() {
     return static_cast<InputCFG>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 setInputCFG(InputCFG in) {
-    runSingleCommand( (EDF::String<33>("AT+AUXCFG=") + static_cast<uint8_t>(in)).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+AUXCFG=") + static_cast<uint8_t>(in)).asCString() );
 }
 
 std::optional<bool> BT1026::
@@ -544,18 +596,18 @@ getPrint() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setPrint(bool enable) {
-    runSingleCommand( (EDF::String<33>("AT+PRINT=") + enable).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+PRINT=") + enable).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 setTone(uint8_t tone) {
     if( tone > 94 ) {
         LOG_ERR("Invalid tone! Choose a value between 0-94");
-        return;
+        return false;
     }
-    runSingleCommand( (EDF::String<33>("AT+TONEPLAY=") + tone).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+TONEPLAY=") + tone).asCString() );
 }
 
 std::optional<uint8_t> BT1026::
@@ -565,13 +617,13 @@ getMutePIO() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setMutePIO(uint8_t pin) {
     if( pin > 63 ) {
         LOG_ERR("Invalid pin! Choose a value between 0-63");
-        return;
+        return false;
     }
-    runSingleCommand( (EDF::String<33>("AT+MUTEPIO=") + pin).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+MUTEPIO=") + pin).asCString() );
 }
 
 std::optional<bool> BT1026::
@@ -599,26 +651,26 @@ getSPPState() {
     return static_cast<SPPSTATE>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 SPPConnect(const EDF::String<13>& mac) {
     EDF::String<33> cmd("AT+SPPCONN");
     if( !mac.isEmpty() ) {
         cmd += '=';
         cmd += mac;
     }
-    runSingleCommand( cmd.asCString() );
+    return runSingleCommand ( cmd.asCString() );
 }
 
-void BT1026::
+bool BT1026::
 SPPRelease() {
-    runSingleCommand( "AT+SPPDISC" );
+    return runSingleCommand ( "AT+SPPDISC" );
 }
 
-void BT1026::
+bool BT1026::
 SPPSend(const EDF::String<493>& data) {
     // NOTE: uartTx[] limits how much can actually be sent here!
     // TODO: deal with that if you actually use this function
-    runSingleCommand( (EDF::String<504>("AT+SPPSEND=") + data).asCString() );
+    return runSingleCommand ( (EDF::String<504>("AT+SPPSEND=") + data).asCString() );
 }
 
 std::optional<GATTSTATE> BT1026::
@@ -628,16 +680,16 @@ getGATTState() {
     return static_cast<GATTSTATE>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 GATTRelease() {
-    runSingleCommand( "AT+GATTDISC" );
+    return runSingleCommand ( "AT+GATTDISC" );
 }
 
-void BT1026::
+bool BT1026::
 GATTSend(const EDF::String<493>& data) {
     // NOTE: uartTx[] limits how much can actually be sent here!
     // TODO: deal with that if you actually use this function
-    runSingleCommand( (EDF::String<505>("AT+GATTSEND=") + data).asCString() );
+    return runSingleCommand ( (EDF::String<505>("AT+GATTSEND=") + data).asCString() );
 }
 
 std::optional<HFPSTATE> BT1026::
@@ -654,32 +706,32 @@ getHFPRes() {
     return EDF::String<33>(response.argv[2]).toUint16_t();
 }
 
-void BT1026::
+bool BT1026::
 setHFPRes(uint16_t hz) {
     // 0-48,000
     if( hz > 48'000 ) {
         LOG_ERR("Invalid hz! Choose a value between 0-48000");
-        return;
+        return false;
     }
-    runSingleCommand( (EDF::String<33>("AT+HFPRES=") + hz).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+HFPRES=") + hz).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 HFPConnect(const EDF::String<13>& mac) {
     EDF::String<33> cmd("AT+HFPCONN");
     if( !mac.isEmpty() ) {
         cmd += '=';
         cmd += mac;
     }
-    runSingleCommand( cmd.asCString() );
+    return runSingleCommand ( cmd.asCString() );
 }
 
-void BT1026::
+bool BT1026::
 HFPRelease() {
-    runSingleCommand( "AT+HFPDISC" );
+    return runSingleCommand ( "AT+HFPDISC" );
 }
 
-void BT1026::
+bool BT1026::
 HFPDial(const EDF::String<26>& phoneNumber) {
     // +123 (123) 456-7890
     EDF::String<37> cmd("AT+HFPDIAL=");
@@ -690,56 +742,58 @@ HFPDial(const EDF::String<26>& phoneNumber) {
     }
     if( !cmd.equals("AT+HFPDIAL=") ) {
         // added at least one number...
-        runSingleCommand( cmd.asCString() );
+        return runSingleCommand ( cmd.asCString() );
     }
     else {
         LOG_ERR("Invalid number!");
     }
+    return false;
 }
 
-void BT1026::
+bool BT1026::
 HFPDTMF(char dtmf) {
     // 0-9,#,* (dial-tone multi-frequency)
     if( EDF::String<32>("1234567890#*").contains(dtmf) ) {
-        runSingleCommand( (EDF::String<32>("AT+HFPDTMF=") + dtmf).asCString() );
+        return runSingleCommand ( (EDF::String<32>("AT+HFPDTMF=") + dtmf).asCString() );
     }
     else {
         LOG_ERR("Invalid dial-tone multi-frequency character! Choose one: 1234567890#*");
     }
+    return false;
 }
 
-void BT1026::
+bool BT1026::
 HFPCallPickup() {
-    runSingleCommand( "AT+HFPANSW" );
+    return runSingleCommand ( "AT+HFPANSW" );
 }
 
-void BT1026::
+bool BT1026::
 HFPCallHangup() {
-    runSingleCommand( "AT+HFPCHUP" );
+    return runSingleCommand ( "AT+HFPCHUP" );
 }
 
-void BT1026::
+bool BT1026::
 HFPTransferAudio(bool deviceToModule) {
     // module -> device if false
-    runSingleCommand( (EDF::String<33>("AT+HFPADTS=") + deviceToModule).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+HFPADTS=") + deviceToModule).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 HFPVoiceRecognition(bool start) {
-    runSingleCommand( (EDF::String<33>("AT+HFPVR=") + start).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+HFPVR=") + start).asCString() );
 }
-void BT1026::
+bool BT1026::
 setHFPSCO(HFPSCO config) {
-    runSingleCommand( (EDF::String<33>("AT+HFPSCO=") + static_cast<uint8_t>(config)).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+HFPSCO=") + static_cast<uint8_t>(config)).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 setHFPBattery(uint8_t level) {
     if( level > 9 ) {
         LOG_ERR("Invalid level! Choose a value between 0-9");
-        return;
+        return false;
     }
-    runSingleCommand( (EDF::String<33>("AT+HFPRES=") + level).asCString() );
+    return runSingleCommand ( (EDF::String<33>("AT+HFPRES=") + level).asCString() );
 }
 
 std::optional<A2DPSTATE> BT1026::
@@ -749,19 +803,19 @@ getA2DPState() {
     return static_cast<A2DPSTATE>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 A2DPConnect(const EDF::String<13>& mac) {
     EDF::String<33> cmd("AT+A2DPCONN");
     if( !mac.isEmpty() ) {
         cmd += '=';
         cmd += mac;
     }
-    runSingleCommand( cmd.asCString() );
+    return runSingleCommand ( cmd.asCString() );
 }
 
-void BT1026::
+bool BT1026::
 A2DPRelease() {
-    runSingleCommand( "AT+A2DPDISC" );
+    return runSingleCommand ( "AT+A2DPDISC" );
 }
 
 std::optional<A2DPCFG> BT1026::
@@ -771,9 +825,9 @@ getA2DPCFG() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setA2DPCFG(A2DPCFG config) {
-    runSingleCommand( (EDF::String<33>("AT+A2DPCFG=") + config).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+A2DPCFG=") + config).asCString() );
 }
 
 std::optional<A2DPDecoder> BT1026::
@@ -790,9 +844,9 @@ getA2DPEncoder() {
     return static_cast<A2DPDecoder>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 setA2DPConnection(bool establish) {
-    runSingleCommand( (EDF::String<33>("AT+A2DPAUDIO=") + establish).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+A2DPAUDIO=") + establish).asCString() );
 }
 
 std::optional<AVRCPSTATE> BT1026::
@@ -809,49 +863,49 @@ getAVRCPCFG() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setAVRCPCFG(AVRCPCFG config) {
-    runSingleCommand( (EDF::String<33>("AT+AVRCPCFG=") + config).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+AVRCPCFG=") + config).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 playPause() {
-    runSingleCommand( "AT+PLAYPAUSE" );
+    return runSingleCommand( "AT+PLAYPAUSE" );
 }
 
-void BT1026::
+bool BT1026::
 play() {
-    runSingleCommand( "AT+PLAY" );
+    return runSingleCommand( "AT+PLAY" );
 }
 
-void BT1026::
+bool BT1026::
 pause() {
-    runSingleCommand( "AT+PAUSE" );
+    return runSingleCommand( "AT+PAUSE" );
 }
 
-void BT1026::
+bool BT1026::
 stop() {
-    runSingleCommand( "AT+STOP" );
+    return runSingleCommand( "AT+STOP" );
 }
 
-void BT1026::
+bool BT1026::
 forward() {
-    runSingleCommand( "AT+FORWARD" );
+    return runSingleCommand( "AT+FORWARD" );
 }
 
-void BT1026::
+bool BT1026::
 backward() {
-    runSingleCommand( "AT+BACKWARD" );
+    return runSingleCommand( "AT+BACKWARD" );
 }
 
-void BT1026::
+bool BT1026::
 fastForward(bool pressDown) {
-    runSingleCommand( (EDF::String<33>("AT+FFWD=") + pressDown).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+FFWD=") + pressDown).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 rewind(bool pressDown) {
-    runSingleCommand( (EDF::String<33>("AT+RWD=") + pressDown).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+RWD=") + pressDown).asCString() );
 }
 
 std::optional<HIDSTATE> BT1026::
@@ -861,19 +915,19 @@ getHIDState() {
     return static_cast<HIDSTATE>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 HIDConnect(const EDF::String<13>& mac) {
     EDF::String<33> cmd("AT+HIDCONN");
     if( !mac.isEmpty() ) {
         cmd += '=';
         cmd += mac;
     }
-    runSingleCommand( cmd.asCString() );
+    return runSingleCommand( cmd.asCString() );
 }
 
-void BT1026::
+bool BT1026::
 HIDRelease() {
-    runSingleCommand( "AT+HIDDISC" );
+    return runSingleCommand( "AT+HIDDISC" );
 }
 
 std::optional<HIDMode> BT1026::
@@ -883,9 +937,9 @@ getHIDMode() {
     return static_cast<HIDMode>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 setHIDMode(HIDMode mode) {
-    runSingleCommand( (EDF::String<33>("AT+HIDMODE=") + static_cast<uint8_t>(mode)).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+HIDMODE=") + static_cast<uint8_t>(mode)).asCString() );
 }
 
 std::optional<bool> BT1026::
@@ -895,9 +949,9 @@ getHIDAutoRelease() {
     return EDF::String<33>(response.argv[2]).toUint8_t();
 }
 
-void BT1026::
+bool BT1026::
 setHIDAutoRelease(bool enable) {
-    runSingleCommand( (EDF::String<33>("AT+HIDREL=") + enable).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+HIDREL=") + enable).asCString() );
 }
 
 std::optional<uint32_t> BT1026::
@@ -907,24 +961,25 @@ getHIDDelay() {
     return EDF::String<33>(response.argv[2]).toUint32_t();
 }
 
-void BT1026::
+bool BT1026::
 setHIDDelay(uint32_t ms) {
-    runSingleCommand( (EDF::String<33>("AT+HIDDLY=") + ms).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+HIDDLY=") + ms).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 HIDSend(const EDF::String<33>& key) {
     EDF::String<64> cmd("AT+HIDSEND=");
     cmd += key.length();
     cmd += ',';
     cmd += key;
-    runSingleCommand( cmd.asCString() );
+    return runSingleCommand( cmd.asCString() );
 }
 
-void BT1026::
+bool BT1026::
 HIDCmd(HIDCommand cmd) {
     // TODO: deal with sending hex, runSingleCommand uses std::strlen()
     LOG_ERR("HIDCmd() Not implemented!");
+    return false;
 }
 
 std::optional<PBSTATE> BT1026::
@@ -934,29 +989,29 @@ getPBState() {
     return static_cast<PBSTATE>(EDF::String<33>(response.argv[2]).toUint8_t());
 }
 
-void BT1026::
+bool BT1026::
 PBConnect(const EDF::String<13>& mac) {
     EDF::String<33> cmd("AT+PBCONN");
     if( !mac.isEmpty() ) {
         cmd += '=';
         cmd += mac;
     }
-    runSingleCommand( cmd.asCString() );
+    return runSingleCommand( cmd.asCString() );
 }
 
-void BT1026::
+bool BT1026::
 PBRelease() {
-    runSingleCommand( "AT+PBDISC" );
+    return runSingleCommand( "AT+PBDISC" );
 }
 
-void BT1026::
+bool BT1026::
 PBDownload(PBDown type) {
-    runSingleCommand( (EDF::String<33>("AT+PBDOWN=") + static_cast<uint8_t>(type)).asCString() );
+    return runSingleCommand( (EDF::String<33>("AT+PBDOWN=") + static_cast<uint8_t>(type)).asCString() );
 }
 
-void BT1026::
+bool BT1026::
 PBDownload(PBDown type, uint16_t maxItems) {
-    runSingleCommand((
+    return runSingleCommand((
         EDF::String<33>("AT+PBDOWN=") +
         static_cast<uint8_t>(type) +
         ',' +

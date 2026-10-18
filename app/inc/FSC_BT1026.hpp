@@ -257,6 +257,26 @@ enum class HIDCommand : uint16_t {
     OnScreenKeyboardToggle  = 0x01AE,
 };
 
+enum class PlayState {
+    Stopped         = 0x00,
+    Playing         = 0x01,
+    Paused          = 0x02,
+    FastForward     = 0x03,
+    FastRewinding   = 0x04,
+};
+
+struct TrackState {
+    PlayState playState;
+    uint32_t elapsedTime_ms;
+    uint32_t totalTime_ms;
+};
+
+struct TrackInfo {
+    EDF::String<64> title;
+    EDF::String<64> artist;
+    EDF::String<64> album;
+};
+
 // Command memory
 struct Response {
     EDF::String<32> expected;
@@ -265,17 +285,50 @@ struct Response {
     Response() : argc(0) {}
 };
 
+// Event Handlers
+struct Events {
+    using OnScanResult = void(*)(
+        int16_t index, // -1 = end
+        uint8_t addressType, // 0 = BLE Public, 1 = BLE random, 2 = BR/EDR
+        const EDF::String<13>& mac,
+        int8_t rssi,
+        uint8_t dataLen,
+        const uint8_t* data
+    );
+    using OnPaired = void(*)(const EDF::String<13>& mac);
+    using OnStateDevice = void(*)(DEVSTATE state);
+    using OnStateA2DP = void(*)(A2DPSTATE state);
+    using OnDeviceA2DPConnected = void(*)(
+        const EDF::String<13>& mac,
+        const char* remoteName
+    );
+    using OnStateAVRCP = void(*)(AVRCPSTATE state);
+    using OnStatePlay = void(*)(PlayState state);
+    using OnStateTrack = void(*)(TrackState state);
+    using OnTrackInfo = void(*)(const TrackInfo info);
+    OnScanResult onScanResult;
+    OnPaired onPaired;
+    OnStateDevice onStateDevice;
+    OnStateA2DP onStateA2DP;
+    OnDeviceA2DPConnected onDeviceA2DPConnected;
+    OnStateAVRCP onStateAVRCP;
+    OnStatePlay onStatePlay;
+    OnStateTrack onStateTrack;
+    OnTrackInfo onTrackInfo;
+};
+
 class BT1026 {
 private:
     const device* const uart;
     modem_backend_uart backend;
     modem_chat chat;
-    uint8_t uartRx[256];
+    uint8_t uartRx[512];
+    uint8_t chatRx[512];
     uint8_t uartTx[256];
-    uint8_t chatRx[256];
     uint8_t* chatArgv[32];
 
     Response response;
+    Events events;
 
     // Concurrency controls
     k_mutex lock;
@@ -287,38 +340,39 @@ public:
     void callbackMatchUnsolicited( modem_chat* chat, char** argv, uint16_t argc );
 private:
     bool runSingleCommand( const char* cmd, const char* expected = nullptr );
+    void asyncResponse( char** argv, uint16_t argc );
 public:
-    BT1026( const device* const uart );
+    BT1026( const device* const uart, const Events& events = {} );
     int init();
 
     std::optional<Version> getVersion();
 
     std::optional<uint32_t> getBaudrate();
-    void setBaudrate( uint32_t baudrate );
+    bool setBaudrate( uint32_t baudrate );
 
     std::optional<I2SCFG> getI2SCFG();
-    void setI2SCFG( I2SCFG cfg );
+    bool setI2SCFG( I2SCFG cfg );
 
     std::optional<bool> getSPDIFCFG();
-    void setSPDIFCFG( bool enable );
+    bool setSPDIFCFG( bool enable );
 
     std::optional<int32_t> getMicGain();
-    void setMicGain( int32_t gain );
+    bool setMicGain( int32_t gain );
 
     std::optional<int32_t> getSpkVol();
-    void setSpkVol( int32_t volume );
+    bool setSpkVol( int32_t volume );
 
-    void reboot();
-    void factoryReset();
+    bool reboot();
+    bool factoryReset();
 
     std::optional<bool> getBluetoothIsOn();
-    void setBluetooth( bool on );
+    bool setBluetooth( bool on );
 
     std::optional<Profile> getProfile();
-    void setProfile( Profile p );
+    bool setProfile( Profile p );
 
     std::optional<uint8_t> getAutoConn();
-    void setAutoConn(uint8_t maxAttempts);
+    bool setAutoConn(uint8_t maxAttempts);
 
     std::optional<STATES> getAllStates();
     std::optional<DEVSTATE> getDevState();
@@ -326,115 +380,115 @@ public:
     std::optional<EDF::String<13>> getBLEAddress();
 
     std::optional<EDF::String<32>> getName();
-    void setName(const EDF::String<32>& name, bool enableMACSuffix = true);
+    bool setName(const EDF::String<32>& name, bool enableMACSuffix = true);
 
     std::optional<EDF::String<32>> getBLEName();
-    void setBLEName(const EDF::String<32>& name, bool enableMACSuffix = true);
+    bool setBLEName(const EDF::String<32>& name, bool enableMACSuffix = true);
 
     std::optional<SecureSimplePairing> getSPP();
-    void setSPP(SecureSimplePairing m); // NOTE: Needs reboot
+    bool setSPP(SecureSimplePairing m); // NOTE: Needs reboot
 
     std::optional<EDF::String<16>> getPin();
-    void setPin(const EDF::String<16>& pin);
+    bool setPin(const EDF::String<16>& pin);
 
     std::optional<EDF::String<7>> getCOD(); // Have fun
-    void setCOD(const EDF::String<7>& cod); // http://bluetooth-pentest.narod.ru/software/bluetooth_class_of_device-service_generator.html
+    bool setCOD(const EDF::String<7>& cod); // http://bluetooth-pentest.narod.ru/software/bluetooth_class_of_device-service_generator.html
 
     std::optional<bool> getAdvertising();
-    void setAdvertising(bool start);
+    bool setAdvertising(bool start);
 
-    void setScanning(bool start); // a bunch of responses happen
+    bool setScanning(bool start); // a bunch of responses happen
 
-    void getPairedList(); // A bunch of respones happen
-    void delPaired(uint8_t index);
-    void delAllConnections();
+    bool getPairedList(); // A bunch of respones happen
+    bool delPaired(uint8_t index);
+    bool delAllConnections();
 
     std::optional<bool> getThroughputMode();
-    void setThroughputMode(bool enable);
+    bool setThroughputMode(bool enable);
 
     std::optional<InputCFG> getInputCFG();
-    void setInputCFG(InputCFG in);
+    bool setInputCFG(InputCFG in);
 
     std::optional<bool> getPrint();
-    void setPrint(bool enable);
+    bool setPrint(bool enable);
 
-    void setTone(uint8_t tone); // 0-94?
+    bool setTone(uint8_t tone); // 0-94?
 
     std::optional<uint8_t> getMutePIO();
-    void setMutePIO(uint8_t pin); // 0-63
+    bool setMutePIO(uint8_t pin); // 0-63
 
     std::optional<bool> setMicMute(bool enable);
     std::optional<bool> setSpkMute(bool enable);
 
     std::optional<SPPSTATE> getSPPState();
-    void SPPConnect(const EDF::String<13>& mac = "");
-    void SPPRelease();
-    void SPPSend(const EDF::String<493>& data); // UTF-8
+    bool SPPConnect(const EDF::String<13>& mac = "");
+    bool SPPRelease();
+    bool SPPSend(const EDF::String<493>& data); // UTF-8
 
     std::optional<GATTSTATE> getGATTState();
-    void GATTRelease();
-    void GATTSend(const EDF::String<493>& data); // UTF-8
+    bool GATTRelease();
+    bool GATTSend(const EDF::String<493>& data); // UTF-8
 
     std::optional<HFPSTATE> getHFPState();
 
     std::optional<uint16_t> getHFPRes();
-    void setHFPRes(uint16_t hz); // 0-48,000
+    bool setHFPRes(uint16_t hz); // 0-48,000
 
-    void HFPConnect(const EDF::String<13>& mac = "");
+    bool HFPConnect(const EDF::String<13>& mac = "");
 
-    void HFPRelease();
+    bool HFPRelease();
 
-    void HFPDial(const EDF::String<26>& phoneNumber); // +123 (123) 456-7890
-    void HFPDTMF(char dtmf); // 0-9,#,* (dial-tone multi-frequency)
-    void HFPCallPickup();
-    void HFPCallHangup();
-    void HFPTransferAudio(bool deviceToModule); // module -> device if false
-    void HFPVoiceRecognition(bool start); // like siri
-    void setHFPSCO(HFPSCO config);
-    void setHFPBattery(uint8_t level); // 0-9
+    bool HFPDial(const EDF::String<26>& phoneNumber); // +123 (123) 456-7890
+    bool HFPDTMF(char dtmf); // 0-9,#,* (dial-tone multi-frequency)
+    bool HFPCallPickup();
+    bool HFPCallHangup();
+    bool HFPTransferAudio(bool deviceToModule); // module -> device if false
+    bool HFPVoiceRecognition(bool start); // like siri
+    bool setHFPSCO(HFPSCO config);
+    bool setHFPBattery(uint8_t level); // 0-9
 
     std::optional<A2DPSTATE> getA2DPState();
-    void A2DPConnect(const EDF::String<13>& mac = "");
-    void A2DPRelease();
+    bool A2DPConnect(const EDF::String<13>& mac = "");
+    bool A2DPRelease();
 
     std::optional<A2DPCFG> getA2DPCFG();
-    void setA2DPCFG(A2DPCFG config);
+    bool setA2DPCFG(A2DPCFG config);
 
     std::optional<A2DPDecoder> getA2DPDecoder();
     std::optional<A2DPEncoder> getA2DPEncoder();
-    void setA2DPConnection(bool establish);
+    bool setA2DPConnection(bool establish);
 
     std::optional<AVRCPSTATE> getAVRCPState();
 
     std::optional<AVRCPCFG> getAVRCPCFG();
-    void setAVRCPCFG(AVRCPCFG config);
+    bool setAVRCPCFG(AVRCPCFG config);
 
-    void playPause();
-    void play();
-    void pause();
-    void stop();
-    void forward();
-    void backward();
-    void fastForward(bool pressDown); // false for pressUp (release button)
-    void rewind(bool pressDown); // false for pressUp (release button)
+    bool playPause();
+    bool play();
+    bool pause();
+    bool stop();
+    bool forward();
+    bool backward();
+    bool fastForward(bool pressDown); // false for pressUp (release button)
+    bool rewind(bool pressDown); // false for pressUp (release button)
 
     std::optional<HIDSTATE> getHIDState();
-    void HIDConnect(const EDF::String<13>& mac = "");
-    void HIDRelease();
+    bool HIDConnect(const EDF::String<13>& mac = "");
+    bool HIDRelease();
     std::optional<HIDMode> getHIDMode();
-    void setHIDMode(HIDMode mode);
+    bool setHIDMode(HIDMode mode);
     std::optional<bool> getHIDAutoRelease();
-    void setHIDAutoRelease(bool enable); // false for manual
+    bool setHIDAutoRelease(bool enable); // false for manual
     std::optional<uint32_t> getHIDDelay();
-    void setHIDDelay(uint32_t ms);
-    void HIDSend(const EDF::String<33>& key);
-    void HIDCmd(HIDCommand cmd);
+    bool setHIDDelay(uint32_t ms);
+    bool HIDSend(const EDF::String<33>& key);
+    bool HIDCmd(HIDCommand cmd);
 
     std::optional<PBSTATE> getPBState();
-    void PBConnect(const EDF::String<13>& mac = "");
-    void PBRelease();
-    void PBDownload(PBDown type);
-    void PBDownload(PBDown type, uint16_t maxItems);
+    bool PBConnect(const EDF::String<13>& mac = "");
+    bool PBRelease();
+    bool PBDownload(PBDown type);
+    bool PBDownload(PBDown type, uint16_t maxItems);
 };
 
 }; /* FSC */
