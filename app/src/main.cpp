@@ -83,6 +83,22 @@ static FSC::BT1026 bt( DEVICE_DT_GET(DT_ALIAS(modem)), FSC::Events{
         case FSC::PlayState::FastForward:   break;
         case FSC::PlayState::FastRewinding: break;
         }
+    },
+    .onStateTrack = [](FSC::TrackState state) {
+        const char* ps = "Unknown";
+        switch(state.playState){
+        case FSC::PlayState::Stopped:       ps = "Stopped";         break;
+        case FSC::PlayState::Playing:       ps = "Playing";         break;
+        case FSC::PlayState::Paused:        ps = "Paused";          break;
+        case FSC::PlayState::FastForward:   ps = "Fast Forward";    break;
+        case FSC::PlayState::FastRewinding: ps = "Fast Rewinding";  break;
+        }
+        LOG_INF("PlayState: %s elapsed %d ms / total %d ms", ps, state.elapsedTime_ms, state.totalTime_ms);
+    },
+    .onTrackInfo = [](const FSC::TrackInfo& info) {
+        if( info.artist.isEmpty() && info.album.isEmpty() ) {
+            LOG_INF("%s", info.title.asCString());
+        }
     }
 });
 

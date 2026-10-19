@@ -305,7 +305,7 @@ struct Events {
     using OnStateAVRCP = void(*)(AVRCPSTATE state);
     using OnStatePlay = void(*)(PlayState state);
     using OnStateTrack = void(*)(TrackState state);
-    using OnTrackInfo = void(*)(const TrackInfo info);
+    using OnTrackInfo = void(*)(const TrackInfo& info);
     OnScanResult onScanResult;
     OnPaired onPaired;
     OnStateDevice onStateDevice;
