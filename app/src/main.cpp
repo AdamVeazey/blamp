@@ -9,7 +9,6 @@
 #include "Blamp.hpp"
 #include "QuadratureEncoder.hpp"
 #include "ThreadBT.hpp"
-#include "FSC_BT1026.hpp"
 
 LOG_MODULE_REGISTER(main_cpp, LOG_LEVEL_INF);
 
@@ -64,48 +63,10 @@ static void input_cb(struct input_event *evt) {
 // Register to listen to the input events globally
 INPUT_CALLBACK_DEFINE( nullptr, input_cb );
 
-// 'local' global BT device, should save a lot of thread stack space
-static FSC::BT1026 bt( DEVICE_DT_GET(DT_ALIAS(modem)), FSC::Events{
-    // happen on kworker thread, don't do any blocking stuff!!
-    .onStateDevice = [](FSC::DEVSTATE state) {
-        // only send this event if the connected state changed
-        MainSysQ_BT_Connected( !state.isBR_EDR_Discoverable() ).send();
-    },
-    .onStatePlay = [](FSC::PlayState state) {
-        switch(state) {
-        case FSC::PlayState::Stopped:
-        case FSC::PlayState::Paused:
-            MainSysQ_BT_IsPlaying( false ).send();
-            break;
-        case FSC::PlayState::Playing:
-            MainSysQ_BT_IsPlaying( true ).send();
-            break;
-        case FSC::PlayState::FastForward:   break;
-        case FSC::PlayState::FastRewinding: break;
-        }
-    },
-    .onStateTrack = [](FSC::TrackState state) {
-        const char* ps = "Unknown";
-        switch(state.playState){
-        case FSC::PlayState::Stopped:       ps = "Stopped";         break;
-        case FSC::PlayState::Playing:       ps = "Playing";         break;
-        case FSC::PlayState::Paused:        ps = "Paused";          break;
-        case FSC::PlayState::FastForward:   ps = "Fast Forward";    break;
-        case FSC::PlayState::FastRewinding: ps = "Fast Rewinding";  break;
-        }
-        LOG_INF("PlayState: %s elapsed %d ms / total %d ms", ps, state.elapsedTime_ms, state.totalTime_ms);
-    },
-    .onTrackInfo = [](const FSC::TrackInfo& info) {
-        if( info.artist.isEmpty() && info.album.isEmpty() ) {
-            LOG_INF("%s", info.title.asCString());
-        }
-    }
-});
-
 K_THREAD_DEFINE(
     bluetooth, // name
     2048, // stack size in bytes
-    threadBT, &bt, nullptr, nullptr,
+    threadBT, nullptr, nullptr, nullptr,
     5, // priority
     0, // options
     0 // delay in milliseconds to start

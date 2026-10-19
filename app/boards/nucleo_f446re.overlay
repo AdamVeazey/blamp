@@ -7,6 +7,20 @@
         zephyr,display = &ssd1309_spi;
     };
 
+    bt_pins {
+        compatible = "gpio-leds";
+
+        bt_reset: bt_reset {
+            gpios = <&gpioc 10 GPIO_ACTIVE_LOW>;
+            label = "BT_RESET"; /* Matches schematic name */
+        };
+
+        bt_sys_ctrl: bt_sys_ctrl {
+            gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>;
+            label = "BT_SYS_CTRL"; /* Matches schematic name */
+        };
+    };
+
     buttons {
         compatible = "gpio-keys";
         encoder_btn: encoder_btn {
@@ -25,6 +39,8 @@
 
     aliases {
 		modem = &usart1;
+        bt-reset = &bt_reset;
+        bt-sys-ctrl = &bt_sys_ctrl;
 	};
 };
 
