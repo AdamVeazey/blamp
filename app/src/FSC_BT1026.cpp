@@ -2,7 +2,7 @@
 
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(fsc_bt1026, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(fsc_bt1026, LOG_LEVEL_INF);
 
 namespace FSC {
 
@@ -87,7 +87,7 @@ callbackMatchUnsolicited( modem_chat* chat, char** argv, uint16_t argc ) {
         line += ",";
         line += argv[k];
     }
-    LOG_INF("%s", line.asCString());
+    LOG_DBG("%s", line.asCString());
     asyncResponse(argv, argc);
 }
 
@@ -98,7 +98,7 @@ MODEM_CHAT_MATCHES_DEFINE(matchesAbort, matchERROR);
 bool BT1026::
 runSingleCommand( const char* cmd, const char* expected ) {
     uint32_t timeout_ms = 5000;
-    LOG_INF("runSingleCommand() >%s<", cmd);
+    LOG_DBG("runSingleCommand() >%s<", cmd);
     if (k_mutex_lock(&lock, K_MSEC(timeout_ms + 500)) != 0) {
         LOG_ERR("Failed to get BT lock");
         return false;
@@ -150,7 +150,8 @@ runSingleCommand( const char* cmd, const char* expected ) {
 
     k_mutex_unlock( &lock );
     if( lastResult != MODEM_CHAT_SCRIPT_RESULT_SUCCESS ) {
-        LOG_WRN("runSingleCommand() lastResult: %s",
+        LOG_WRN("runSingleCommand() cmd: %s lastResult: %s",
+            cmd,
             lastResult == MODEM_CHAT_SCRIPT_RESULT_TIMEOUT ? "Timeout" : "Abort"
         );
     }
@@ -333,7 +334,15 @@ getBaudrate() {
 
 bool BT1026::
 setBaudrate( uint32_t baudrate ) {
-    return runSingleCommand( (EDF::String<33>("AT+BAUD=") + baudrate).asCString() );
+    auto value = getBaudrate();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == baudrate ) return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+BAUD=") + baudrate).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getBaudrate();
+    return value.has_value() && value.value() == baudrate;
 }
 
 std::optional<I2SCFG> BT1026::
@@ -345,7 +354,15 @@ getI2SCFG() {
 
 bool BT1026::
 setI2SCFG( I2SCFG cfg ) {
-    return runSingleCommand ( (EDF::String<33>("AT+I2SCFG=") + cfg).asCString() );
+    auto value = getI2SCFG();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == cfg )  return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+I2SCFG=") + cfg).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getI2SCFG();
+    return value.has_value() && value.value() == cfg;
 }
 
 std::optional<bool> BT1026::
@@ -357,7 +374,15 @@ getSPDIFCFG() {
 
 bool BT1026::
 setSPDIFCFG( bool enable ) {
-    return runSingleCommand ( (EDF::String<33>("AT+SPDIFCFG=") + enable).asCString() );
+    auto value = getSPDIFCFG();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == enable )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+SPDIFCFG=") + enable).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getSPDIFCFG();
+    return value.has_value() && value.value() == enable;
 }
 
 std::optional<int32_t> BT1026::
@@ -369,7 +394,15 @@ getMicGain() {
 
 bool BT1026::
 setMicGain( int32_t gain ) {
-    return runSingleCommand ( (EDF::String<33>("AT+MICGAIN=") + gain).asCString() );
+    auto value = getMicGain();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == gain ) return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+MICGAIN=") + gain).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getMicGain();
+    return value.has_value() && value.value() == gain;
 }
 
 std::optional<int32_t> BT1026::
@@ -381,7 +414,15 @@ getSpkVol() {
 
 bool BT1026::
 setSpkVol( int32_t volume ) {
-    return runSingleCommand ( (EDF::String<33>("AT+SPKVOL=") + volume).asCString() );
+    auto value = getSpkVol();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == volume )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+SPKVOL=") + volume).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getSpkVol();
+    return value.has_value() && value.value() == volume;
 }
 
 bool BT1026::
@@ -403,7 +444,15 @@ getBluetoothIsOn() {
 
 bool BT1026::
 setBluetooth( bool on ) {
-    return runSingleCommand ( (EDF::String<33>("AT+BTEN=") + on).asCString() );
+    auto value = getBluetoothIsOn();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == on )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+BTEN=") + on).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getBluetoothIsOn();
+    return value.has_value() && value.value() == on;
 }
 
 std::optional<Profile> BT1026::
@@ -415,7 +464,15 @@ getProfile() {
 
 bool BT1026::
 setProfile( Profile p ) {
-    return runSingleCommand ( (EDF::String<33>("AT+PROFILE=") + p).asCString() );
+    auto value = getProfile();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == p )    return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+PROFILE=") + p).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getProfile();
+    return value.has_value() && value.value() == p;
 }
 
 std::optional<uint8_t> BT1026::
@@ -427,7 +484,15 @@ getAutoConn() {
 
 bool BT1026::
 setAutoConn( uint8_t maxAttempts ) {
-    return runSingleCommand ( (EDF::String<33>("AT+AUTOCONN=") + maxAttempts).asCString() );
+    auto value = getAutoConn();
+    if( !value.has_value() )            return false;   // couldn't read value
+    if( value.value() == maxAttempts )  return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+AUTOCONN=") + maxAttempts).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getAutoConn();
+    return value.has_value() && value.value() == maxAttempts;
 }
 
 std::optional<STATES> BT1026::
@@ -478,9 +543,37 @@ getName() {
 
 bool BT1026::
 setName(const EDF::String<32>& name, bool enableMACSuffix) {
-    return runSingleCommand ((
+    auto value = getName().value_or("");
+    if( value.isEmpty() ) return false; // couldn't read value
+    auto mac = getAddress().value_or("");
+    if( mac.isEmpty() && mac.length() >= 4 ) return false; // couldn't read value
+    auto last4Mac = mac.getSubString(mac.end()-4, mac.end());
+
+    if( !enableMACSuffix ) {
+        if( value.equals(name) ) return true; // already set to desired value
+    }
+    else if( value.length() >= 4 ) { // current value is long enough to hold MAC
+        auto last4Name = value.getSubString(value.end()-4, value.end());
+        auto currentName = value.getSubString(value.begin(), value.end()-4);
+        if( currentName.equals(name) && last4Name.equals(last4Mac) ) return true; // already set to desired value
+    }
+
+    bool ret = runSingleCommand ((
         EDF::String<40>("AT+NAME=") + name + ',' + enableMACSuffix
     ).asCString());
+    if( !ret ) return false; // timeout or some other failure
+
+    value = getName().value_or("");
+    if( value.isEmpty() ) return false;
+    if( !enableMACSuffix ){
+        return value.equals(name);
+    }
+    else {
+        if( value.length() < 4 ) return false; // doesn't have MAC!!
+        auto last4Name = value.getSubString(value.end()-4, value.end());
+        auto currentName = value.getSubString(value.begin(), value.end()-4);
+        return currentName.equals(name) && last4Name.equals(last4Mac);
+    }
 }
 
 std::optional<EDF::String<32>> BT1026::
@@ -492,9 +585,37 @@ getBLEName() {
 
 bool BT1026::
 setBLEName(const EDF::String<32>& name, bool enableMACSuffix) {
-    return runSingleCommand ((
+    auto value = getBLEName().value_or("");
+    if( value.isEmpty() ) return false; // couldn't read value
+    auto mac = getBLEAddress().value_or("");
+    if( mac.isEmpty() ) return false; // couldn't read value
+    auto last4Mac = mac.getSubString(mac.end()-4, mac.end());
+
+    if( !enableMACSuffix ) {
+        if( value.equals(name) ) return true; // already set to desired value
+    }
+    else if( value.length() >= 4 ) { // current value is long enough to hold MAC
+        auto last4Name = value.getSubString(value.end()-4, value.end());
+        auto currentName = value.getSubString(value.begin(), value.end()-4);
+        if( currentName.equals(name) && last4Name.equals(last4Mac) ) return true; // already set to desired value
+    }
+
+    bool ret = runSingleCommand ((
         EDF::String<42>("AT+LENAME=") + name + ',' + enableMACSuffix
     ).asCString());
+    if( !ret ) return false; // timeout or some other failure
+
+    value = getBLEName().value_or("");
+    if( value.isEmpty() ) return false;
+    if( !enableMACSuffix ){
+        return value.equals(name);
+    }
+    else {
+        if( value.length() < 4 ) return false; // doesn't have MAC!!
+        auto last4Name = value.getSubString(value.end()-4, value.end());
+        auto currentName = value.getSubString(value.begin(), value.end()-4);
+        return currentName.equals(name) && last4Name.equals(last4Mac);
+    }
 }
 
 std::optional<SecureSimplePairing> BT1026::
@@ -506,7 +627,15 @@ getSPP() {
 
 bool BT1026::
 setSPP(SecureSimplePairing m) {
-    return runSingleCommand ( (EDF::String<33>("AT+SPP=") + static_cast<uint8_t>(m)).asCString() );
+    auto value = getSPP();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == m )    return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+SPP=") + static_cast<uint8_t>(m)).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getSPP();
+    return value.has_value() && value.value() == m;
 }
 
 std::optional<EDF::String<16>> BT1026::
@@ -518,7 +647,15 @@ getPin() {
 
 bool BT1026::
 setPin(const EDF::String<16>& pin) {
-    return runSingleCommand ( (EDF::String<33>("AT+PIN=") + pin).asCString() );
+    auto value = getPin();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value().equals(pin) ) return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+PIN=") + pin).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getPin();
+    return value.has_value() && value.value().equals(pin);
 }
 
 std::optional<EDF::String<7>> BT1026::
@@ -530,7 +667,15 @@ getCOD() {
 
 bool BT1026::
 setCOD(const EDF::String<7>& cod) {
-    return runSingleCommand ( (EDF::String<33>("AT+COD=") + cod).asCString() );
+    auto value = getCOD();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value().equals(cod) ) return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+COD=") + cod).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getCOD();
+    return value.has_value() && value.value().equals(cod);
 }
 
 std::optional<bool> BT1026::
@@ -542,16 +687,26 @@ getAdvertising() {
 
 bool BT1026::
 setAdvertising(bool start) {
-    return runSingleCommand ( (EDF::String<33>("AT+PAIR=") + start).asCString() );
+    auto value = getAdvertising();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == start )    return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+PAIR=") + start).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getAdvertising();
+    return value.has_value() && value.value() == start;
 }
 
 bool BT1026::
 setScanning(bool start) {
+    // TODO: this generates a bunch of respones. Implement dealing with that later
     return runSingleCommand ( (EDF::String<33>("AT+SCAN=") + start).asCString() );
 }
 
 bool BT1026::
 getPairedList() {
+    // TODO: this generates a bunch of respones. Implement dealing with that later
     return runSingleCommand ( "AT+PLIST" );
 }
 
@@ -574,7 +729,15 @@ getThroughputMode() {
 
 bool BT1026::
 setThroughputMode(bool enable) {
-    return runSingleCommand ( (EDF::String<33>("AT+TPMODE=") + enable).asCString() );
+    auto value = getThroughputMode();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == enable )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+TPMODE=") + enable).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getThroughputMode();
+    return value.has_value() && value.value() == enable;
 }
 
 std::optional<InputCFG> BT1026::
@@ -586,7 +749,15 @@ getInputCFG() {
 
 bool BT1026::
 setInputCFG(InputCFG in) {
-    return runSingleCommand ( (EDF::String<33>("AT+AUXCFG=") + static_cast<uint8_t>(in)).asCString() );
+    auto value = getInputCFG();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == in )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+AUXCFG=") + static_cast<uint8_t>(in)).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getInputCFG();
+    return value.has_value() && value.value() == in;
 }
 
 std::optional<bool> BT1026::
@@ -598,7 +769,15 @@ getPrint() {
 
 bool BT1026::
 setPrint(bool enable) {
-    return runSingleCommand ( (EDF::String<33>("AT+PRINT=") + enable).asCString() );
+    auto value = getPrint();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == enable )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+PRINT=") + enable).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getPrint();
+    return value.has_value() && value.value() == enable;
 }
 
 bool BT1026::
@@ -623,7 +802,15 @@ setMutePIO(uint8_t pin) {
         LOG_ERR("Invalid pin! Choose a value between 0-63");
         return false;
     }
-    return runSingleCommand ( (EDF::String<33>("AT+MUTEPIO=") + pin).asCString() );
+    auto value = getMutePIO();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == pin )  return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+MUTEPIO=") + pin).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getMutePIO();
+    return value.has_value() && value.value() == pin;
 }
 
 std::optional<bool> BT1026::
@@ -713,7 +900,15 @@ setHFPRes(uint16_t hz) {
         LOG_ERR("Invalid hz! Choose a value between 0-48000");
         return false;
     }
-    return runSingleCommand ( (EDF::String<33>("AT+HFPRES=") + hz).asCString() );
+    auto value = getHFPRes();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == hz )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+HFPRES=") + hz).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getHFPRes();
+    return value.has_value() && value.value() == hz;
 }
 
 bool BT1026::
@@ -827,7 +1022,15 @@ getA2DPCFG() {
 
 bool BT1026::
 setA2DPCFG(A2DPCFG config) {
-    return runSingleCommand( (EDF::String<33>("AT+A2DPCFG=") + config).asCString() );
+    auto value = getA2DPCFG();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == config )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+A2DPCFG=") + config).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getA2DPCFG();
+    return value.has_value() && value.value() == config;
 }
 
 std::optional<A2DPDecoder> BT1026::
@@ -865,7 +1068,15 @@ getAVRCPCFG() {
 
 bool BT1026::
 setAVRCPCFG(AVRCPCFG config) {
-    return runSingleCommand( (EDF::String<33>("AT+AVRCPCFG=") + config).asCString() );
+    auto value = getAVRCPCFG();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == config )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+AVRCPCFG=") + config).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getAVRCPCFG();
+    return value.has_value() && value.value() == config;
 }
 
 bool BT1026::
@@ -939,7 +1150,15 @@ getHIDMode() {
 
 bool BT1026::
 setHIDMode(HIDMode mode) {
-    return runSingleCommand( (EDF::String<33>("AT+HIDMODE=") + static_cast<uint8_t>(mode)).asCString() );
+    auto value = getHIDMode();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == mode ) return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+HIDMODE=") + static_cast<uint8_t>(mode)).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getHIDMode();
+    return value.has_value() && value.value() == mode;
 }
 
 std::optional<bool> BT1026::
@@ -951,7 +1170,15 @@ getHIDAutoRelease() {
 
 bool BT1026::
 setHIDAutoRelease(bool enable) {
-    return runSingleCommand( (EDF::String<33>("AT+HIDREL=") + enable).asCString() );
+    auto value = getHIDAutoRelease();
+    if( !value.has_value() )        return false;   // couldn't read value
+    if( value.value() == enable )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+HIDREL=") + enable).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getHIDAutoRelease();
+    return value.has_value() && value.value() == enable;
 }
 
 std::optional<uint32_t> BT1026::
@@ -963,7 +1190,15 @@ getHIDDelay() {
 
 bool BT1026::
 setHIDDelay(uint32_t ms) {
-    return runSingleCommand( (EDF::String<33>("AT+HIDDLY=") + ms).asCString() );
+    auto value = getHIDDelay();
+    if( !value.has_value() )    return false;   // couldn't read value
+    if( value.value() == ms )   return true;    // already set to desired value
+
+    if( !runSingleCommand( (EDF::String<33>("AT+HIDDLY=") + ms).asCString() ) ) {
+        return false; // timeout or some other failure
+    }
+    value = getHIDDelay();
+    return value.has_value() && value.value() == ms;
 }
 
 bool BT1026::
