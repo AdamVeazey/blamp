@@ -27,7 +27,7 @@ private:
     uint8_t percent;
 public:
     BTQ_SetVolume( uint8_t percent ) :
-        BTQ( Enum::SetPlayback ),
+        BTQ( Enum::SetVolume ),
         percent(percent)
     { verifyMessageSize<BTQ_SetVolume>(); }
     uint8_t getPercent() const { return percent; }
