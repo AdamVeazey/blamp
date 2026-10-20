@@ -24,6 +24,7 @@ target_sources(app PRIVATE
     src/Blamp_Blampknob.cpp
     src/Blamp_BT.cpp
     src/Blamp.cpp
+    src/CLI_audio.cpp
     src/CLI_blampknob.cpp
     src/DisplayUI.cpp
     src/FSC_BT1026.cpp

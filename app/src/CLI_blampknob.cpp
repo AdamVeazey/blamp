@@ -1,6 +1,5 @@
-#include <cstdlib> // For atoi
 #include <zephyr/shell/shell.h>
-
+#include <EDF/String.hpp>
 #include "MainSysQ.hpp"
 #include "QuadratureEncoder.hpp"
 
@@ -8,18 +7,13 @@
 // Sub-command: knob pos [ticks]
 // ----------------------------------------------------
 static int cmd_knob_pos(const struct shell *sh, size_t argc, char **argv) {
-    // If no argument is passed, just "rotate right by 1 tick" as a quick default
-    int32_t ticks = 1;
+    // If no argument is passed, just "rotate right by 4 ticks" as a quick default
+    int32_t ticks = 4;
     if (argc > 1) {
-        // Check for quick directional words
-        if (strcmp(argv[1], "right") == 0) {
-            ticks = 1;
-        } else if (strcmp(argv[1], "left") == 0) {
-            ticks = -1;
-        } else {
-            // Otherwise parse the integer (handles negative signs like -5 perfectly)
-            ticks = atoi(argv[1]);
-        }
+        EDF::String<33> arg(argv[1]);
+        if( arg.equals("right") )     ticks = 4;
+        else if( arg.equals("left") ) ticks = -4;
+        else                          ticks = arg.toInt32_t();
     }
     int32_t prev = MockQuadratureEncoder::getValue();
     MockQuadratureEncoder::mockRotate(ticks);
@@ -33,7 +27,7 @@ static int cmd_knob_pos(const struct shell *sh, size_t argc, char **argv) {
 // ----------------------------------------------------
 static int cmd_knob_press(const struct shell *sh, size_t argc, char **argv) {
     bool mockPressShort = true;
-    if (argc > 1 && strcmp(argv[1], "long") == 0) {
+    if( argc > 1 && EDF::String<16>(argv[1]).equals("long") ) {
         mockPressShort = false;
     }
     using T = MainSysQ_BlampKnob_Press::Type;
