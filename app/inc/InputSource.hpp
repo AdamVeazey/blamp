@@ -10,7 +10,14 @@ enum class InputSource {
     UNKNOWN,
 };
 
-constexpr bool canPlayPause( InputSource s ) {
+enum class PlaybackAction {
+    Play,
+    Pause,
+    Forward,
+    Backward,
+};
+
+constexpr bool canControlPlaybackActions( InputSource s ) {
     switch(s) {
     case InputSource::HDMI_ARC:
     case InputSource::USB:

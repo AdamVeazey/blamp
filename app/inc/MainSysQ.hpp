@@ -7,7 +7,7 @@ enum class MainSysQEnum {
     BlampKnob_Position,  // int32_t previous, int32_t current
     BlampKnob_Press,     // enum Type : uint8_t { Short, Long }
 
-    Audio_Playback,     // enum Action : uint8_t { Play, Pause, Mute, Unmute }
+    Audio_Playback,     // enum Action : uint8_t { Play, Pause, Forward, Backward }
     Audio_ChangeSource, // enum Source : uint8_t { Aux, RCA, TOSLINK, HDMI_ARC, BT, USB }
     Audio_Volume,       // uint8_t volume_percent; (0-100)
     Audio_TAS3251Err,   // enum Source : uint8_t { nFAULT, nCLIP_OTW }
@@ -59,16 +59,14 @@ public:
 
 // Sent from BT Comms, CLI, HDMI ARC, and USB threads
 class MainSysQ_Audio_Playback : public MainSysQ {
-public:
-    enum class Action : uint8_t { Play, Pause, Mute, Unmute };
 private:
-    Action action;
+    PlaybackAction action;
 public:
-    MainSysQ_Audio_Playback( Action action ) :
+    MainSysQ_Audio_Playback( PlaybackAction action ) :
         MainSysQ( Enum::Audio_Playback ),
         action(action)
     { verifyMessageSize<MainSysQ_Audio_Playback>(); }
-    Action getAction() const { return action; }
+    PlaybackAction getAction() const { return action; }
 };
 
 // Sent from CLI

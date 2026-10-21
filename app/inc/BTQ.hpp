@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MessageQueue.hpp"
+#include "InputSource.hpp"
 
 // Bluetooth Queue message Enumerations
 enum class BTQEnum {
@@ -13,13 +14,13 @@ using BTQ = MessageQueue<BTQEnum, 16, 8>;
 
 class BTQ_SetPlayback : public BTQ {
 private:
-    bool play;
+    PlaybackAction action;
 public:
-    BTQ_SetPlayback( bool play ) :
+    BTQ_SetPlayback( PlaybackAction action ) :
         BTQ( Enum::SetPlayback ),
-        play(play)
+        action(action)
     { verifyMessageSize<BTQ_SetPlayback>(); }
-    bool shouldPlay() const { return play; }
+    PlaybackAction getAction() const { return action; }
 };
 
 class BTQ_SetVolume : public BTQ {

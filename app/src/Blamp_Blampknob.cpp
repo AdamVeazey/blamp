@@ -48,7 +48,7 @@ handleBlampknob_Press( const MainSysQ_BlampKnob_Press& press ) {
     case DisplayUI::MenuState::Home:
         if( isShort ) {
             // short press
-            using A = MainSysQ_Audio_Playback::Action;
+            using A = PlaybackAction;
             A requestedAction = audio.isPlaying ? A::Pause : A::Play;
             handleAudio_Playback( requestedAction );
         }

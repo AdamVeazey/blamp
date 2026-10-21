@@ -50,13 +50,22 @@ static const gpio_dt_spec BT_RESET = GPIO_DT_SPEC_GET(DT_ALIAS(bt_reset), gpios)
 static const gpio_dt_spec BT_SYS_CTRL = GPIO_DT_SPEC_GET(DT_ALIAS(bt_sys_ctrl), gpios);
 
 static void handleSetPlayback( const BTQ_SetPlayback& playback ) {
-    if( playback.shouldPlay() ) {
+    auto action = playback.getAction();
+    if( action == PlaybackAction::Play ) {
         bool didPlay = bt.play();
-        LOG_INF("handleSetPlayback() did play: %u", didPlay);
+        LOG_INF("handleSetPlayback() bt.play(): %u", didPlay);
     }
-    else {
+    else if( action == PlaybackAction::Pause ) {
         bool didPause = bt.pause();
-        LOG_INF("handleSetPlayback() did pause: %u", didPause);
+        LOG_INF("handleSetPlayback() bt.pause(): %u", didPause);
+    }
+    else if( action == PlaybackAction::Forward ) {
+        bool didForward = bt.forward();
+        LOG_INF("handleSetPlayback() bt.forward(): %u", didForward);
+    }
+    else if( action == PlaybackAction::Backward ) {
+        bool didBackward = bt.backward();
+        LOG_INF("handleSetPlayback() bt.backward(): %u", didBackward);
     }
 }
 

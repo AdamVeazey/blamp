@@ -8,47 +8,33 @@ LOG_MODULE_REGISTER(blamp_audio, LOG_LEVEL_INF);
 
 void Blamp::
 handleAudio_Playback( const MainSysQ_Audio_Playback& action ) {
-    using A = MainSysQ_Audio_Playback::Action;
     auto a = action.getAction();
-    switch( a ) {
-    case A::Mute:
-        // send TAS3251 command, maybe toggle GPIO? however it works
-        return;
-    case A::Unmute:
-        // send TAS3251 command, maybe toggle GPIO? however it works
-        return;
-    case A::Play:  // intentionally left empty
-    case A::Pause: // intentionally left empty
-    default:
-        break;
-    }
-
-    bool success = false;
+    bool canControlInputType = false;
 
     switch(connections.audioSource) {
     case InputSource::AUX_IN:
     case InputSource::RCA_DIGITAL_COAX:
     case InputSource::OPTICAL:
-        LOG_WRN("No way to Play/Pause this InputSource: %s", toString(connections.audioSource));
+        LOG_WRN("No way to control this InputSource: %s", toString(connections.audioSource));
         return;
     case InputSource::HDMI_ARC:
         if( connections.hdmiArcActive ) {
             // send CEC command (I think?) to play/pause
             // hdmi.mediaControl( a );
-            success = true;
+            canControlInputType = true;
         }
         break;
     case InputSource::USB:
         if( connections.usbConnected ) {
             // send USB control back to source to play/pause
             // usb.mediaControl( a );
-            success = true;
+            canControlInputType = true;
         }
         break;
     case InputSource::BLUETOOTH:
         if( connections.bluetoothConnected ) {
-            BTQ_SetPlayback( a == A::Play ).send();
-            success = true;
+            BTQ_SetPlayback( a ).send();
+            canControlInputType = true;
         }
         break;
     case InputSource::UNKNOWN:
@@ -57,10 +43,12 @@ handleAudio_Playback( const MainSysQ_Audio_Playback& action ) {
         return;
     }
 
-    if( success ) {
-        audio.isPlaying = (a == A::Play);
-        if( state == DisplayUI::MenuState::Home )
-            display.updateHomeAudioPlaying( audio.isPlaying );
+    if( canControlInputType ) {
+        if( a == PlaybackAction::Play || a == PlaybackAction::Pause ) {
+            audio.isPlaying = (a == PlaybackAction::Play);
+            if( state == DisplayUI::MenuState::Home )
+               display.updateHomeAudioPlaying( audio.isPlaying );
+        }
     }
     else {
         LOG_WRN("Playback ignored: %s disconnected or inactive.", toString(connections.audioSource));
@@ -70,6 +58,10 @@ handleAudio_Playback( const MainSysQ_Audio_Playback& action ) {
 void Blamp::
 handleAudio_ChangeSource( const MainSysQ_Audio_ChangeSource& source ) {
     auto s = source.getInputSource();
+    if( connections.audioSource == s ) {
+        LOG_WRN("Current source is already %s", toString(connections.audioSource));
+        return;
+    }
     switch(s){
     case InputSource::AUX_IN:
         if( connections.auxConnected ) connections.audioSource = s;
@@ -77,7 +69,7 @@ handleAudio_ChangeSource( const MainSysQ_Audio_ChangeSource& source ) {
     case InputSource::RCA_DIGITAL_COAX:
     case InputSource::OPTICAL:
         connections.audioSource = s;
-        LOG_DBG("No way to know if %s is connected!", toString(s));
+        LOG_WRN("No way to know if %s is connected!", toString(s));
         break;
     case InputSource::HDMI_ARC:
         if( connections.hdmiArcActive ) connections.audioSource = s;
@@ -96,7 +88,7 @@ handleAudio_ChangeSource( const MainSysQ_Audio_ChangeSource& source ) {
     if( connections.audioSource == s ) {
         // PCM9211 I2C write to change source
         LOG_INF("InputSource changed to %s", toString(connections.audioSource));
-        if( !canPlayPause( connections.audioSource ) ) {
+        if( !canControlPlaybackActions( connections.audioSource ) ) {
             // can't control play/pause, assume always playing?
             audio.isPlaying = true;
         }

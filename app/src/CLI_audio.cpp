@@ -2,13 +2,13 @@
 #include <EDF/String.hpp>
 #include "MainSysQ.hpp"
 
-static int cmd_audio_play(const struct shell *sh, size_t argc, char **argv) {
-    MainSysQ_Audio_Playback(MainSysQ_Audio_Playback::Action::Play).send();
-    return 0;
-}
-
-static int cmd_audio_pause(const struct shell *sh, size_t argc, char **argv) {
-    MainSysQ_Audio_Playback(MainSysQ_Audio_Playback::Action::Pause).send();
+static int cmd_audio_playback(const struct shell *sh, size_t argc, char **argv) {
+    EDF::String<16> arg(argv[0]);
+    if( arg.equals("play") )     MainSysQ_Audio_Playback(PlaybackAction::Play).send();
+    if( arg.equals("pause") )    MainSysQ_Audio_Playback(PlaybackAction::Pause).send();
+    if( arg.equals("forward") )  MainSysQ_Audio_Playback(PlaybackAction::Forward).send();
+    if( arg.equals("backward") ) MainSysQ_Audio_Playback(PlaybackAction::Backward).send();
+    // intentionally skipped error handling, CLI already deals with it for me
     return 0;
 }
 
@@ -37,10 +37,11 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_input,
     SHELL_SUBCMD_SET_END
 );
 
-
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_audio,
-    SHELL_CMD(play,  NULL, "Play", cmd_audio_play),
-    SHELL_CMD(pause, NULL, "Pause", cmd_audio_pause),
+    SHELL_CMD(play,  NULL, "Play", cmd_audio_playback),
+    SHELL_CMD(pause, NULL, "Pause", cmd_audio_playback),
+    SHELL_CMD(forward, NULL, "Forward", cmd_audio_playback),
+    SHELL_CMD(backward, NULL, "Backward", cmd_audio_playback),
     SHELL_CMD(input, &sub_input, "Select input source: AUX, COAX, OPTICAL, HDMI, USB, Bluetooth", NULL),
     SHELL_SUBCMD_SET_END
 );
